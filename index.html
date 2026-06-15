@@ -771,26 +771,55 @@ const today=new Date();
 
 // ── CORS proxy sync ───────────────────────────────────────────────────────────
 function parseCSV(text){
-  const lines=text.split('\n').map(l=>l.trim()).filter(l=>l);
+  // Column map matches Google Sheets export of SunOil_Shipment_Tracker
+  // [0]Trans [1]Broker [2]OrderDate [3]Type [4]PO [5]Product [6]UoM [7]Dept
+  // [8]Supplier [9]NOA [10]BoL [11]Shipment# [12]Container [13]Equipment
+  // [14]Carrier [15]Arrived [16]BrokerEntry [17]Cheque [18]Outgated
+  // [19]Clifton [20]Returned [21]ReturnBy [22]Dem [23]Stor [24]PD [25]VAT
+  // [26]TotalCharges [27]Stage2 [28]Stage3a [29]Stage3b [30]PortDays
+  // [31]CustodyDays [32]VendorLT [33]DaysSinceOrder [34]ArrivedMth [35]OrderMth
+  // [36]Entry2Outgate [37]Clifton2Ret [38]Status [39]Notes [40]LastUpdated
+  const lines=text.split('\n').map(function(l){return l.trim();}).filter(function(l){return l;});
   const records=[];let dataStart=0;
-  for(let i=0;i<Math.min(lines.length,10);i++){
+  for(let i=0;i<Math.min(lines.length,15);i++){
     const c=parseCSVLine(lines[i]);
     const po=(c[4]||'').trim();
-    if(/^60\d{5}/.test(po)||(/^\d+$/.test((c[0]||'').trim())&&po.length>5)){dataStart=i;break;}
+    const tr=(c[0]||'').trim();
+    if(/^60\d{5}$/.test(po)||((/^\d+$/.test(tr))&&po.length>=5&&/\d{5,}/.test(po))){
+      dataStart=i;break;
+    }
   }
   for(let i=dataStart;i<lines.length;i++){
-    const c=parseCSVLine(lines[i]);const po=(c[4]||'').trim();
-    if(!po||!/\d/.test(po))continue;
-    const fn=v=>{const n=parseFloat((v||'').replace(/[$,]/g,''));return isNaN(n)?0:n;};
-    const sv=v=>(v||'').trim().replace(/^"(.+)"$/,'$1');
-    const dv=v=>{const s=sv(v);return s&&s!=='n/a'&&s!=='N/A'?s:'';};
-    records.push({trans:sv(c[0]),broker:sv(c[1]),odate:dv(c[2]),type:sv(c[3])||'FCL',
-      po:sv(c[4]),product:sv(c[5]),uom:sv(c[6]),dept:sv(c[9]),noa:dv(c[10]),
-      bol:sv(c[11]),cont:sv(c[14]),equip:sv(c[16]),carrier:sv(c[17]),
-      arrived:dv(c[18]),breq:dv(c[19]),outgated:dv(c[20]),returned:dv(c[21]),
-      clearDays:fn(c[22]),leadDays:fn(c[23]),returnDays:fn(c[24]),
-      status:sv(c[25]).replace(/\s+/g,' ').trim(),
-      dem:fn(c[28]),stor:fn(c[29]),perdiem:fn(c[30]),vat:fn(c[31])});
+    const c=parseCSVLine(lines[i]);
+    const po=(c[4]||'').trim();
+    if(!po||po.length<5||!/\d/.test(po))continue;
+    // Skip header-like rows
+    if(po==='PO #'||po==='PO#'||po.toLowerCase()==='po')continue;
+    const fn=function(v){const n=parseFloat((v||'').replace(/[$,]/g,''));return isNaN(n)?0:n;};
+    const sv=function(v){return(v||'').trim().replace(/^"(.+)"$/,'$1');};
+    const dv=function(v){const s=sv(v);return(s&&s!=='n/a'&&s!=='N/A'&&s!=='')?s:'';};
+    // Compute vendor_lt and days_since_order from dates
+    const odate=dv(c[2]);const arrived=dv(c[15]);
+    let vendor_lt=0,days_since_order=0;
+    if(odate&&arrived){
+      try{const g=Math.round((new Date(arrived)-new Date(odate))/86400000);if(g>0&&g<365)vendor_lt=g;}catch(e){}
+    }
+    if(odate&&!arrived){
+      try{days_since_order=Math.round((new Date()-new Date(odate))/86400000);}catch(e){}
+    }
+    records.push({
+      trans:sv(c[0]),  broker:sv(c[1]),    odate:odate,       type:sv(c[3])||'FCL',
+      po:po,           product:sv(c[5]),    uom:sv(c[6]),      dept:sv(c[7]),
+      supplier:sv(c[8]),noa:dv(c[9]),      bol:sv(c[10]),     cont:sv(c[12]),
+      equip:sv(c[13]), carrier:sv(c[14]),   arrived:arrived,   breq:dv(c[16]),
+      cheque:dv(c[17]),outgated:dv(c[18]), returned:dv(c[20]),
+      clearDays:fn(c[30]),  // Total Port Days
+      leadDays:fn(c[32]),   // Vendor Lead Time (Order→Arrival)
+      returnDays:fn(c[31]), // Custody Days
+      status:sv(c[38]).replace(/\s+/g,' ').trim(),
+      dem:fn(c[22]),stor:fn(c[23]),perdiem:fn(c[24]),vat:fn(c[25]),
+      vendor_lt:vendor_lt,days_since_order:days_since_order
+    });
   }
   return records;
 }
