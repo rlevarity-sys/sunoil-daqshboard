@@ -334,7 +334,7 @@ function checkPwd(){
 </div>
 <div class="sbar emb" id="sbar">
   <div class="dot"></div>
-  <span id="sbar-text">Loaded from embedded data — 219 records · Click “↳ Sync Google Sheet” to load latest data"Sync Google Sheet" to pull latest updates</span>
+  <span id="sbar-text">Loaded from embedded data — click “↳ Sync Google Sheet” to pull latest records from Google Sheets"Sync Google Sheet" to pull latest updates</span>
 </div>
 
 
@@ -753,7 +753,9 @@ const PROXIES=[
 let DATA=[...EMBEDDED_DATA];
 let filtered=[...DATA],sortKey='',sortDir=1,page=0;
 let cFiltered=[],cPage=0;
-const PER=20,CPER=25;
+let pendFiltered=[],pendPage=0,pendSortKey='days_since_order',pendSortDir=-1;
+let ltFiltered=[],ltPage=0,ltSortKey='vendor_lt',ltSortDir=-1;
+const PER=20,CPER=25,PPPP=25,LTPP=20;
 
 // normalise status on load
 DATA.forEach(d=>{if(d.status)d.status=d.status.replace(/\s+/g,' ').trim();});
@@ -821,6 +823,7 @@ function parseCSV(text){
       vendor_lt:vendor_lt,days_since_order:days_since_order
     });
   }
+  console.log('parseCSV: parsed '+records.length+' records. Last 3 trans#: '+records.slice(-3).map(function(r){return r.trans+'('+r.po+')'}).join(', '));
   return records;
 }
 function parseCSVLine(line){const r=[];let cur='',inQ=false;
@@ -865,6 +868,7 @@ async function tryLiveRefresh(){
   try{
     var result=await jsonpFetch(SHEET_URL);
     if(result && result.csv){
+      console.log('JSONP returned csv: '+result.csv.split('\\n').length+' lines, '+result.csv.length+' chars');
       var recs=parseCSV(result.csv);
       if(recs.length>=10){
         DATA=recs;
@@ -879,6 +883,7 @@ async function tryLiveRefresh(){
     }
   }catch(err){
     console.log('JSONP sync failed:',err.message);
+  console.log('Falling back to embedded data:',DATA.length,'records');
   }
 
   // All methods failed — stay on embedded data
